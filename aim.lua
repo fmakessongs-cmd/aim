@@ -1,10 +1,9 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
 local Camera = workspace.CurrentCamera
 local lp = Players.LocalPlayer
-local unpack = table.unpack or unpack
+local CoreGui = game:GetService("CoreGui")
 
 local COOLDOWN   = 0.2
 local AIM_RANGE  = 999999
@@ -15,61 +14,86 @@ local apAtkOn    = false
 local camLockP   = false
 local camLockM   = false
 local aimbotOn   = false
-local espOn      = true
 local hbEnabled  = false
 local hbSize     = 25
 local dashEnabled = false
 local dashPower  = 160
 local autoM1On   = false
 
-local function safeGUI(g)
-    local ok, h = pcall(function() return gethui() end)
-    g.Parent = (ok and h) and h or lp:WaitForChild("PlayerGui")
+if CoreGui:FindFirstChild("FyZe_Delta_Fix") then
+    CoreGui:FindFirstChild("FyZe_Delta_Fix"):Destroy()
 end
 
 local mGui = Instance.new("ScreenGui")
-mGui.Name = "FyZe_NoComments"; mGui.ResetOnSpawn = false; mGui.IgnoreGuiInset = true; mGui.DisplayOrder = 999
-safeGUI(mGui)
+mGui.Name = "FyZe_Delta_Fix"
+mGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+mGui.Parent = CoreGui
 
 local icon = Instance.new("ImageButton", mGui)
-icon.Size = UDim2.new(0, 50, 0, 50); icon.Position = UDim2.new(0, 10, 0, 150)
-icon.BackgroundColor3 = Color3.fromRGB(65, 100, 240); icon.Image = "rbxassetid://6031094678"; icon.ZIndex = 10
+icon.Size = UDim2.new(0, 50, 0, 50)
+icon.Position = UDim2.new(0, 10, 0, 150)
+icon.BackgroundColor3 = Color3.fromRGB(65, 100, 240)
+icon.Image = "rbxassetid://6031094678"
 Instance.new("UICorner", icon).CornerRadius = UDim.new(1, 0)
-Instance.new("UIStroke", icon).Color = Color3.white
 
 local mf = Instance.new("Frame", mGui)
-mf.Size = UDim2.new(0, 260, 0, 500); mf.Position = UDim2.new(0.5, -130, 0.5, -250)
-mf.BackgroundColor3 = Color3.fromRGB(11, 11, 16); mf.Visible = true; mf.ClipsDescendants = true
+mf.Size = UDim2.new(0, 260, 0, 450)
+mf.Position = UDim2.new(0.5, -130, 0.5, -225)
+mf.BackgroundColor3 = Color3.fromRGB(11, 11, 16)
+mf.Visible = true
 Instance.new("UICorner", mf).CornerRadius = UDim.new(0, 9)
 Instance.new("UIStroke", mf).Color = Color3.fromRGB(65, 100, 240)
 
 local scroll = Instance.new("ScrollingFrame", mf)
-scroll.Size = UDim2.new(1, 0, 1, -10); scroll.Position = UDim2.new(0, 0, 0, 10)
-scroll.BackgroundTransparency = 1; scroll.CanvasSize = UDim2.new(0, 0, 0, 1200); scroll.ScrollBarThickness = 3
-local list = Instance.new("UIListLayout", scroll); list.Padding = UDim.new(0, 4); list.HorizontalAlignment = "Center"
+scroll.Size = UDim2.new(1, 0, 1, -20)
+scroll.Position = UDim2.new(0, 0, 0, 10)
+scroll.BackgroundTransparency = 1
+scroll.CanvasSize = UDim2.new(0, 0, 0, 1000)
+scroll.ScrollBarThickness = 2
+local list = Instance.new("UIListLayout", scroll)
+list.Padding = UDim.new(0, 5)
+list.HorizontalAlignment = "Center"
 
 local function mkRow(txt)
-    local fr = Instance.new("Frame", scroll); fr.Size = UDim2.new(0.95, 0, 0, 34)
-    fr.BackgroundColor3 = Color3.fromRGB(18, 18, 28); fr.BorderSizePixel = 0; Instance.new("UICorner", fr).CornerRadius = UDim.new(0, 5)
-    local lb = Instance.new("TextLabel", fr); lb.Size = UDim2.new(0.6, 0, 1, 0); lb.Position = UDim2.new(0, 10, 0, 0)
-    lb.BackgroundTransparency = 1; lb.Text = txt; lb.TextColor3 = Color3.white; lb.Font = Enum.Font.GothamBold; lb.TextSize = 10; lb.TextXAlignment = "Left"
-    local st = Instance.new("TextLabel", fr); st.Size = UDim2.new(0.25, 0, 1, 0); st.Position = UDim2.new(0.55, 0, 0, 0)
-    st.BackgroundTransparency = 1; st.Text = "OFF"; st.TextColor3 = Color3.fromRGB(255, 70, 70); st.Font = Enum.Font.GothamBold; st.TextSize = 9; st.TextXAlignment = "Right"
-    local btn = Instance.new("TextButton", fr); btn.Size = UDim2.new(0, 38, 0, 20); btn.Position = UDim2.new(1, -45, 0.5, -10)
-    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 60); btn.Text = ""; Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
-    local dot = Instance.new("Frame", btn); dot.Size = UDim2.new(0, 14, 0, 14); dot.Position = UDim2.new(0, 3, 0.5, -7)
-    dot.BackgroundColor3 = Color3.fromRGB(200, 200, 200); Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
-    return btn, dot, st
+    local fr = Instance.new("Frame", scroll)
+    fr.Size = UDim2.new(0.9, 0, 0, 35)
+    fr.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    Instance.new("UICorner", fr).CornerRadius = UDim.new(0, 6)
+    
+    local lb = Instance.new("TextLabel", fr)
+    lb.Size = UDim2.new(0.6, 0, 1, 0)
+    lb.Position = UDim2.new(0, 10, 0, 0)
+    lb.Text = txt
+    lb.TextColor3 = Color3.white
+    lb.Font = Enum.Font.GothamBold
+    lb.TextSize = 10
+    lb.BackgroundTransparency = 1
+    lb.TextXAlignment = "Left"
+
+    local btn = Instance.new("TextButton", fr)
+    btn.Size = UDim2.new(0, 40, 0, 20)
+    btn.Position = UDim2.new(1, -45, 0.5, -10)
+    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
+    btn.Text = ""
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
+    
+    local dot = Instance.new("Frame", btn)
+    dot.Size = UDim2.new(0, 14, 0, 14)
+    dot.Position = UDim2.new(0, 3, 0.5, -7)
+    dot.BackgroundColor3 = Color3.white
+    Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+    
+    return btn, dot
 end
 
-local m1B, m1D, m1S = mkRow("Auto Fruit M1")
-local abB, abD, abS = mkRow("Silent Aim (No Rot)")
-local aaB, aaD, aaS = mkRow("NPC Kill Aura")
-local apB, apD, apS = mkRow("Player Kill Aura")
-local clmB, clmD, clmS = mkRow("Cam Lock NPCs")
-local clpB, clpD, clpS = mkRow("Cam Lock Players")
-local hbB, hbD, hbS = mkRow("Hitbox Expander")
-local dsB, dsD, dsS = mkRow("Dash Expander")
+local m1B, m1D = mkRow("Auto M1")
+local abB, abD = mkRow("Silent Aim")
+local aaB, aaD = mkRow("NPC Aura")
+local apB, apD = mkRow("Player Aura")
+local clmB, clmD = mkRow("Lock NPCs")
+local clpB, clpD = mkRow("Lock Players")
+local hbB, hbD = mkRow("Hitbox")
+local dsB, dsD = mkRow("Dash Boost")
 
 local function getTgt(mobs, players, range)
     local t, d = nil, range or AIM_RANGE
@@ -106,7 +130,7 @@ local old; old = hookmetamethod(game, "__namecall", function(self, ...)
     local args = {...}
     if aimbotOn and (method == "FireServer" or method == "InvokeServer") then
         local target = getTgt(true, true, AIM_RANGE)
-        if target and (self.Name:find("Attack") or self.Name:find("Skill") or self.Name == "RemoteEvent") then
+        if target and (self.Name:find("Attack") or self.Name:find("Skill")) then
             args[1] = target.HumanoidRootPart.Position
         end
     end
@@ -116,18 +140,14 @@ end)
 RunService.RenderStepped:Connect(function()
     if camLockM or camLockP then
         local target = getTgt(camLockM, camLockP, 400)
-        if target then
-            Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.HumanoidRootPart.Position)
-        end
+        if target then Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.HumanoidRootPart.Position) end
     end
 end)
 
 RunService.Heartbeat:Connect(function()
     if hbEnabled then
         for _, v in pairs(workspace.Enemies:GetChildren()) do
-            if v:FindFirstChild("HumanoidRootPart") then
-                v.HumanoidRootPart.Size = Vector3.new(hbSize, hbSize, hbSize); v.HumanoidRootPart.Transparency = 0.7
-            end
+            if v:FindFirstChild("HumanoidRootPart") then v.HumanoidRootPart.Size = Vector3.new(hbSize, hbSize, hbSize) end
         end
     end
     if dashEnabled and lp.Character:FindFirstChild("HumanoidRootPart") then
@@ -136,20 +156,19 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-local function setT(on, btn, dot, stl)
+local function toggle(on, btn, dot)
     btn.BackgroundColor3 = on and Color3.fromRGB(65, 100, 240) or Color3.fromRGB(45, 45, 60)
-    dot.Position = on and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
-    stl.Text = on and "ON" or "OFF"; stl.TextColor3 = on and Color3.fromRGB(80, 255, 100) or Color3.fromRGB(255, 70, 70)
+    dot:TweenPosition(on and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7), "Out", "Quad", 0.2, true)
 end
 
-m1B.MouseButton1Click:Connect(function() autoM1On = not autoM1On; setT(autoM1On, m1B, m1D, m1S) end)
-abB.MouseButton1Click:Connect(function() aimbotOn = not aimbotOn; setT(aimbotOn, abB, abD, abS) end)
-aaB.MouseButton1Click:Connect(function() aaOn = not aaOn; setT(aaOn, aaB, aaD, aaS) end)
-apB.MouseButton1Click:Connect(function() apAtkOn = not apAtkOn; setT(apAtkOn, apB, apD, apS) end)
-clmB.MouseButton1Click:Connect(function() camLockM = not camLockM; setT(camLockM, clmB, clmD, clmS) end)
-clpB.MouseButton1Click:Connect(function() camLockP = not camLockP; setT(clpB, clpB, clpD, clpS) end)
-hbB.MouseButton1Click:Connect(function() hbEnabled = not hbEnabled; setT(hbEnabled, hbB, hbD, hbS) end)
-dsB.MouseButton1Click:Connect(function() dashEnabled = not dashEnabled; setT(dashEnabled, dsB, dsD, dsS) end)
+m1B.MouseButton1Click:Connect(function() autoM1On = not autoM1On; toggle(autoM1On, m1B, m1D) end)
+abB.MouseButton1Click:Connect(function() aimbotOn = not aimbotOn; toggle(aimbotOn, abB, abD) end)
+aaB.MouseButton1Click:Connect(function() aaOn = not aaOn; toggle(aaOn, aaB, aaD) end)
+apB.MouseButton1Click:Connect(function() apAtkOn = not apAtkOn; toggle(apAtkOn, apB, apD) end)
+clmB.MouseButton1Click:Connect(function() camLockM = not camLockM; toggle(camLockM, clmB, clmD) end)
+clpB.MouseButton1Click:Connect(function() camLockP = not camLockP; toggle(camLockP, clpB, clpD) end)
+hbB.MouseButton1Click:Connect(function() hbEnabled = not hbEnabled; toggle(hbEnabled, hbB, hbD) end)
+dsB.MouseButton1Click:Connect(function() dashEnabled = not dashEnabled; toggle(dashEnabled, dsB, dsD) end)
 icon.MouseButton1Click:Connect(function() mf.Visible = not mf.Visible end)
 
 local drag, start, origin = false, nil, nil
