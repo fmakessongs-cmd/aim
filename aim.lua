@@ -20,67 +20,86 @@ local dashEnabled = false
 local dashPower  = 160
 local autoM1On   = false
 
-if CoreGui:FindFirstChild("FyZe_Delta_Fix") then
-    CoreGui:FindFirstChild("FyZe_Delta_Fix"):Destroy()
+for _, v in pairs(CoreGui:GetChildren()) do
+    if v.Name == "FyZe_Delta_Permanent" then
+        v:Destroy()
+    end
 end
 
 local mGui = Instance.new("ScreenGui")
-mGui.Name = "FyZe_Delta_Fix"
-mGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+mGui.Name = "FyZe_Delta_Permanent"
+mGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+mGui.DisplayOrder = 999999999
+mGui.ResetOnSpawn = false
 mGui.Parent = CoreGui
 
 local icon = Instance.new("ImageButton", mGui)
-icon.Size = UDim2.new(0, 50, 0, 50)
-icon.Position = UDim2.new(0, 10, 0, 150)
+icon.Name = "ToggleIcon"
+icon.Size = UDim2.new(0, 55, 0, 55)
+icon.Position = UDim2.new(0, 20, 0, 200)
 icon.BackgroundColor3 = Color3.fromRGB(65, 100, 240)
 icon.Image = "rbxassetid://6031094678"
+icon.ZIndex = 1000000000
 Instance.new("UICorner", icon).CornerRadius = UDim.new(1, 0)
+local iStroke = Instance.new("UIStroke", icon)
+iStroke.Color = Color3.new(1,1,1)
+iStroke.Thickness = 2
 
 local mf = Instance.new("Frame", mGui)
+mf.Name = "MainFrame"
 mf.Size = UDim2.new(0, 260, 0, 450)
 mf.Position = UDim2.new(0.5, -130, 0.5, -225)
 mf.BackgroundColor3 = Color3.fromRGB(11, 11, 16)
-mf.Visible = true
-Instance.new("UICorner", mf).CornerRadius = UDim.new(0, 9)
-Instance.new("UIStroke", mf).Color = Color3.fromRGB(65, 100, 240)
+mf.BorderSizePixel = 0
+mf.Visible = true 
+mf.ZIndex = 999999998
+Instance.new("UICorner", mf).CornerRadius = UDim.new(0, 10)
+local mStroke = Instance.new("UIStroke", mf)
+mStroke.Color = Color3.fromRGB(65, 100, 240)
+mStroke.Thickness = 2
 
 local scroll = Instance.new("ScrollingFrame", mf)
 scroll.Size = UDim2.new(1, 0, 1, -20)
 scroll.Position = UDim2.new(0, 0, 0, 10)
 scroll.BackgroundTransparency = 1
-scroll.CanvasSize = UDim2.new(0, 0, 0, 1000)
+scroll.CanvasSize = UDim2.new(0, 0, 0, 1100)
 scroll.ScrollBarThickness = 2
+scroll.ZIndex = 999999999
 local list = Instance.new("UIListLayout", scroll)
-list.Padding = UDim.new(0, 5)
+list.Padding = UDim.new(0, 6)
 list.HorizontalAlignment = "Center"
 
 local function mkRow(txt)
     local fr = Instance.new("Frame", scroll)
-    fr.Size = UDim2.new(0.9, 0, 0, 35)
+    fr.Size = UDim2.new(0.92, 0, 0, 38)
     fr.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-    Instance.new("UICorner", fr).CornerRadius = UDim.new(0, 6)
+    fr.ZIndex = 999999999
+    Instance.new("UICorner", fr).CornerRadius = UDim.new(0, 8)
     
     local lb = Instance.new("TextLabel", fr)
     lb.Size = UDim2.new(0.6, 0, 1, 0)
-    lb.Position = UDim2.new(0, 10, 0, 0)
+    lb.Position = UDim2.new(0, 12, 0, 0)
     lb.Text = txt
     lb.TextColor3 = Color3.white
     lb.Font = Enum.Font.GothamBold
-    lb.TextSize = 10
+    lb.TextSize = 11
     lb.BackgroundTransparency = 1
     lb.TextXAlignment = "Left"
+    lb.ZIndex = 1000000000
 
     local btn = Instance.new("TextButton", fr)
-    btn.Size = UDim2.new(0, 40, 0, 20)
-    btn.Position = UDim2.new(1, -45, 0.5, -10)
+    btn.Size = UDim2.new(0, 42, 0, 22)
+    btn.Position = UDim2.new(1, -50, 0.5, -11)
     btn.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
     btn.Text = ""
+    btn.ZIndex = 1000000000
     Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
     
     local dot = Instance.new("Frame", btn)
-    dot.Size = UDim2.new(0, 14, 0, 14)
-    dot.Position = UDim2.new(0, 3, 0.5, -7)
+    dot.Size = UDim2.new(0, 16, 0, 16)
+    dot.Position = UDim2.new(0, 3, 0.5, -8)
     dot.BackgroundColor3 = Color3.white
+    dot.ZIndex = 1000000001
     Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
     
     return btn, dot
@@ -158,7 +177,7 @@ end)
 
 local function toggle(on, btn, dot)
     btn.BackgroundColor3 = on and Color3.fromRGB(65, 100, 240) or Color3.fromRGB(45, 45, 60)
-    dot:TweenPosition(on and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7), "Out", "Quad", 0.2, true)
+    dot:TweenPosition(on and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8), "Out", "Quad", 0.15, true)
 end
 
 m1B.MouseButton1Click:Connect(function() autoM1On = not autoM1On; toggle(autoM1On, m1B, m1D) end)
@@ -169,7 +188,10 @@ clmB.MouseButton1Click:Connect(function() camLockM = not camLockM; toggle(camLoc
 clpB.MouseButton1Click:Connect(function() camLockP = not camLockP; toggle(camLockP, clpB, clpD) end)
 hbB.MouseButton1Click:Connect(function() hbEnabled = not hbEnabled; toggle(hbEnabled, hbB, hbD) end)
 dsB.MouseButton1Click:Connect(function() dashEnabled = not dashEnabled; toggle(dashEnabled, dsB, dsD) end)
-icon.MouseButton1Click:Connect(function() mf.Visible = not mf.Visible end)
+
+icon.MouseButton1Click:Connect(function() 
+    mf.Visible = not mf.Visible 
+end)
 
 local drag, start, origin = false, nil, nil
 icon.InputBegan:Connect(function(inp) if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then drag=true; start=inp.Position; origin=icon.Position end end)
