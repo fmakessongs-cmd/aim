@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════
---   FyZe Hub | Blox Fruits  v6
+--   FyZe Hub | Blox Fruits  v1
 -- ═══════════════════════════════════════════
 local Players    = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -417,15 +417,17 @@ jStroke.Color = Color3.fromRGB(50,160,80); jStroke.Thickness = 1.5
 
 -- drag the jump button
 local jDragging,jDragStart,jDragOrigin=false,nil,nil
+local jDidDrag=false
 jBtn.InputBegan:Connect(function(inp)
     if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
-        jDragging=true; jDragStart=inp.Position; jDragOrigin=jBtn.Position
+        jDragging=true; jDidDrag=false; jDragStart=inp.Position; jDragOrigin=jBtn.Position
     end
 end)
 UIS.InputChanged:Connect(function(inp)
     if not jDragging then return end
     if inp.UserInputType~=Enum.UserInputType.MouseMovement and inp.UserInputType~=Enum.UserInputType.Touch then return end
     local d=inp.Position-jDragStart
+    if d.Magnitude > 5 then jDidDrag=true end
     jBtn.Position=UDim2.new(jDragOrigin.X.Scale,jDragOrigin.X.Offset+d.X,jDragOrigin.Y.Scale,jDragOrigin.Y.Offset+d.Y)
 end)
 UIS.InputEnded:Connect(function(inp)
@@ -438,14 +440,18 @@ local jHeld = false
 jBtn.MouseButton1Down:Connect(function() jHeld = true end)
 jBtn.MouseButton1Up:Connect(function()   jHeld = false end)
 jBtn.MouseButton1Click:Connect(function()
-    if jDragStart and (jBtn.Position.X.Offset~=jDragOrigin and jDragOrigin~=nil) then return end
+    if jDidDrag then jDidDrag=false; return end  -- was a drag, not a tap
     local char=lp.Character; if not char then return end
     local hrp=char:FindFirstChild("HumanoidRootPart")
     local hum=char:FindFirstChildOfClass("Humanoid")
     if hrp and hum then
         pcall(function()
+            -- anchor briefly so velocity sticks, then release
+            hrp.Anchored = true
+            task.wait()
+            hrp.Anchored = false
             hum:ChangeState(Enum.HumanoidStateType.Jumping)
-            hrp.Velocity=Vector3.new(hrp.Velocity.X, 120, hrp.Velocity.Z)
+            hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 130, hrp.AssemblyLinearVelocity.Z)
         end)
     end
 end)
@@ -592,6 +598,24 @@ local LOCS={
 }
 local tpActive=false; local groundPos=nil; local skyPos=nil; local hitRegistry={}
 
+-- Reliable teleport: anchor HRP, set CFrame directly, unanchor
+-- TweenService on HRP gets overridden by the physics server replication
+local function teleportTo(pos)
+    local char=lp.Character; if not char then return end
+    local hrp=char:FindFirstChild("HumanoidRootPart"); if not hrp then return end
+    local hum=char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.PlatformStand=true end
+    hrp.Anchored=true
+    -- set CFrame 3 times across 2 frames to make sure it sticks
+    for _=1,3 do
+        pcall(function() hrp.CFrame=CFrame.new(pos) end)
+        task.wait()
+    end
+    hrp.Anchored=false
+    if hum then task.wait(0.1); hum.PlatformStand=false end
+end
+
+-- Sky tween still uses smooth movement (looks better, distance is huge so physics matters less)
 local function tweenTo(pos,dur)
     local char=lp.Character; if not char then return end
     local hrp=char:FindFirstChild("HumanoidRootPart"); if not hrp then return end
@@ -599,7 +623,7 @@ local function tweenTo(pos,dur)
     if hum then hum.PlatformStand=true end
     local tw=TweenSvc:Create(hrp,TweenInfo.new(dur or 1.2,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{CFrame=CFrame.new(pos)})
     tw:Play(); tw.Completed:Wait()
-    if hum then hum.PlatformStand=false end
+    if hum then task.wait(0.1); hum.PlatformStand=false end
 end
 
 local function setSkyUI(active)
@@ -627,10 +651,11 @@ end)
 tpGndBtn.MouseButton1Click:Connect(function()
     tpActive=false; setSkyUI(false)
     local char=lp.Character; local hrp=char and char:FindFirstChild("HumanoidRootPart"); if not hrp then return end
-    task.spawn(tweenTo,groundPos and groundPos+Vector3.new(0,3,0) or Vector3.new(hrp.Position.X,hrp.Position.Y-9999,hrp.Position.Z),1.5)
+    local dest=groundPos and groundPos+Vector3.new(0,3,0) or Vector3.new(hrp.Position.X,hrp.Position.Y-500,hrp.Position.Z)
+    task.spawn(teleportTo,dest)
 end)
-tpSCBtn.MouseButton1Click:Connect(function() task.spawn(tweenTo,LOCS.SEA_CASTLE,2.5) end)
-tpManBtn.MouseButton1Click:Connect(function() task.spawn(tweenTo,LOCS.MANSION,2.5) end)
+tpSCBtn.MouseButton1Click:Connect(function() task.spawn(teleportTo,LOCS.SEA_CASTLE) end)
+tpManBtn.MouseButton1Click:Connect(function() task.spawn(teleportTo,LOCS.MANSION) end)
 
 lp.CharacterAdded:Connect(function()
     hitRegistry={}; tpActive=false; groundPos=nil; skyPos=nil; setSkyUI(false); hookDash()
