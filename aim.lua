@@ -25,6 +25,13 @@ local hitboxSize = 15
 local dashOn     = false
 local DASH_MULT  = 3
 local uiOpen     = true
+-- 1 = Kitsune M1,  2 = T-Rex M1
+local weaponMode = 1
+-- auto-collect coins when in range
+local autoCollect = false
+-- notify when a player enters attack range
+local proximityAlert = false
+local lastAlertTime  = {}
 
 local function tryFont(n)
     local ok,v = pcall(function() return Enum.Font[n] end)
@@ -254,6 +261,13 @@ mkDiv()
 mkSection("  HITBOX")
 local _,hbB,hbD,hbSt         = mkToggle("Hitbox Expander")
 mkDiv()
+mkSection("  WEAPON")
+local _,wpB,wpD,wpSt         = mkToggle("T-Rex Mode")  -- OFF=Kitsune ON=T-Rex
+mkDiv()
+mkSection("  EXTRAS")
+local _,acB,acD,acSt         = mkToggle("Auto Collect")
+local _,paB,paD,paSt         = mkToggle("Proximity Alert")
+mkDiv()
 mkSection("  RANGE")
 -- range slider row
 local sliderFr=Instance.new("Frame",content); sliderFr.Size=UDim2.new(1,0,0,38)
@@ -354,6 +368,14 @@ hbB.MouseButton1Click:Connect(function()
     if not hitboxOn then restoreHitboxes() end
 end)
 dashB.MouseButton1Click:Connect(function() dashOn=not dashOn; setTog(dashOn,dashB,dashD,dashSt) end)
+wpB.MouseButton1Click:Connect(function()
+    weaponMode = weaponMode==1 and 2 or 1
+    local on = weaponMode==2
+    setTog(on,wpB,wpD,wpSt)
+    wpSt.Text = on and "T-Rex" or "Kitsune"
+end)
+acB.MouseButton1Click:Connect(function() autoCollect=not autoCollect; setTog(autoCollect,acB,acD,acSt) end)
+paB.MouseButton1Click:Connect(function() proximityAlert=not proximityAlert; setTog(proximityAlert,paB,paD,paSt) end)
 infB.MouseButton1Click:Connect(function()
     atkInf=not atkInf
     if atkInf then descCache=workspace:GetDescendants(); lastScan=tick() end
@@ -416,42 +438,40 @@ local jStroke = Instance.new("UIStroke",jBtn)
 jStroke.Color = Color3.fromRGB(50,160,80); jStroke.Thickness = 1.5
 
 -- drag the jump button
-local jDragging,jDragStart,jDragOrigin=false,nil,nil
-local jDidDrag=false
+-- jump button: only moves when you press+drag on the button itself
+local jDragging=false; local jDragStart=nil; local jDragOrigin=nil; local jMovedPx=0
+
 jBtn.InputBegan:Connect(function(inp)
     if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
-        jDragging=true; jDidDrag=false; jDragStart=inp.Position; jDragOrigin=jBtn.Position
+        jDragging=true; jMovedPx=0
+        jDragStart=Vector2.new(inp.Position.X,inp.Position.Y)
+        jDragOrigin=Vector2.new(jBtn.AbsolutePosition.X+jBtn.AbsoluteSize.X/2, jBtn.AbsolutePosition.Y+jBtn.AbsoluteSize.Y/2)
     end
 end)
-UIS.InputChanged:Connect(function(inp)
+jBtn.InputChanged:Connect(function(inp)  -- only fires for events ON jBtn
     if not jDragging then return end
     if inp.UserInputType~=Enum.UserInputType.MouseMovement and inp.UserInputType~=Enum.UserInputType.Touch then return end
-    local d=inp.Position-jDragStart
-    if d.Magnitude > 5 then jDidDrag=true end
-    jBtn.Position=UDim2.new(jDragOrigin.X.Scale,jDragOrigin.X.Offset+d.X,jDragOrigin.Y.Scale,jDragOrigin.Y.Offset+d.Y)
+    local dx=inp.Position.X-jDragStart.X; local dy=inp.Position.Y-jDragStart.Y
+    jMovedPx=math.sqrt(dx*dx+dy*dy)
+    -- use Scale 0 + absolute offset so it doesn't snap to AnchorPoint math
+    jBtn.Position=UDim2.new(0,jDragOrigin.X+dx,0,jDragOrigin.Y+dy)
 end)
-UIS.InputEnded:Connect(function(inp)
+jBtn.InputEnded:Connect(function(inp)
     if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
-        jDragging=false; jDragStart=nil; jDragOrigin=nil
+        jDragging=false
     end
 end)
 
-local jHeld = false
-jBtn.MouseButton1Down:Connect(function() jHeld = true end)
-jBtn.MouseButton1Up:Connect(function()   jHeld = false end)
 jBtn.MouseButton1Click:Connect(function()
-    if jDidDrag then jDidDrag=false; return end  -- was a drag, not a tap
+    if jMovedPx > 6 then jMovedPx=0; return end  -- was a drag, ignore click
     local char=lp.Character; if not char then return end
     local hrp=char:FindFirstChild("HumanoidRootPart")
     local hum=char:FindFirstChildOfClass("Humanoid")
     if hrp and hum then
         pcall(function()
-            -- anchor briefly so velocity sticks, then release
-            hrp.Anchored = true
-            task.wait()
-            hrp.Anchored = false
             hum:ChangeState(Enum.HumanoidStateType.Jumping)
-            hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 130, hrp.AssemblyLinearVelocity.Z)
+            task.wait()
+            hrp.AssemblyLinearVelocity=Vector3.new(hrp.AssemblyLinearVelocity.X,130,hrp.AssemblyLinearVelocity.Z)
         end)
     end
 end)
@@ -662,42 +682,78 @@ lp.CharacterAdded:Connect(function()
 end)
 
 -- ═══════════════════════════════════════════
--- SILENT AIMBOT (mousemoverel)
+-- SILENT AIMBOT (improved)
+-- Picks nearest target within FOV, aims at HEAD not HRP,
+-- uses smoothed lerp movement so it's not instant-snap,
+-- works even when kill aura is off (standalone aim)
 -- ═══════════════════════════════════════════
-local SILENT_SPEED=0.55; local SILENT_FOV=300
-local function getScreenPos(wp)
+local SILENT_FOV   = 350   -- screen pixel radius to search
+local SILENT_SMOOTH = 0.45  -- 0=instant snap, 1=very slow (0.45 = fast but smooth)
+local aimTarget    = nil    -- persists between frames for smoothing
+
+local function screenPos(wp)
     local ok,sp,vis=pcall(function() return Camera:WorldToViewportPoint(wp) end)
     if not ok or not vis then return nil end
     return Vector2.new(sp.X,sp.Y)
 end
+
 local function doSilentAim()
     if not silentAim or not mousemoverel then return end
     local char=lp.Character; if not char then return end
+    local vp=Camera.ViewportSize
+    local center=Vector2.new(vp.X/2,vp.Y/2)  -- screen center for FOV check
+
+    -- find best target: closest to screen center within FOV
     local best,bestD=nil,SILENT_FOV
-    local mp=Vector2.new(mouse.X,mouse.Y)
     local function check(model)
-        local hrp=model:FindFirstChild("HumanoidRootPart"); if not hrp then return end
+        if model==char then return end
+        local head=model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
+        if not head then return end
         local hum=model:FindFirstChildOfClass("Humanoid"); if not hum or hum.Health<=0 then return end
-        local sp=getScreenPos(hrp.Position+Vector3.new(0,2,0)); if not sp then return end
-        local d=(sp-mp).Magnitude
-        if d<bestD then bestD=d; best={root=hrp,sp=sp} end
+        local sp=screenPos(head.Position); if not sp then return end
+        local d=(sp-center).Magnitude  -- distance from center (not mouse)
+        if d<bestD then bestD=d; best={model=model,head=head,sp=sp} end
     end
-    if apAtkOn then for _,p in ipairs(Players:GetPlayers()) do if p~=lp and p.Character then check(p.Character) end end end
-    if aaOn then
+
+    -- always check all players if any aim is on
+    if camLockP or apAtkOn or silentAim then
+        for _,p in ipairs(Players:GetPlayers()) do
+            if p~=lp and p.Character then check(p.Character) end
+        end
+    end
+    -- check mobs
+    if camLockM or aaOn or silentAim then
         local desc=getDesc()
         for i=1,#desc do
             local obj=desc[i]
-            if obj and obj:IsA("Humanoid") and obj.Health>0 and obj.Parent and obj.Parent~=char and not pSet[obj.Parent] then
-                check(obj.Parent)
+            if obj and obj:IsA("Humanoid") and obj.Health>0 and obj.Parent and obj.Parent~=char then
+                if not pSet[obj.Parent] then check(obj.Parent) end
             end
         end
     end
-    if best then pcall(function() mousemoverel((best.sp.X-mp.X)*SILENT_SPEED,(best.sp.Y-mp.Y)*SILENT_SPEED) end) end
+
+    if best then
+        aimTarget=best
+        local sp=best.sp
+        local mp=Vector2.new(mouse.X,mouse.Y)
+        local dx=sp.X-mp.X; local dy=sp.Y-mp.Y
+        -- only move if target is not already on crosshair (dead zone 3px)
+        if math.abs(dx)>3 or math.abs(dy)>3 then
+            pcall(function()
+                mousemoverel(dx*SILENT_SMOOTH, dy*SILENT_SMOOTH)
+            end)
+        end
+    else
+        aimTarget=nil
+    end
 end
 
 -- ═══════════════════════════════════════════
--- KITSUNE M1
+-- REMOTES: KITSUNE M1 + T-REX M1
 -- ═══════════════════════════════════════════
+local RS = game:GetService("ReplicatedStorage")
+
+-- Kitsune remote
 local cachedKLC=nil
 local function getKLC()
     local char=lp.Character; if not char then return nil end
@@ -706,7 +762,97 @@ local function getKLC()
     local t=char:FindFirstChild("Kitsune-Kitsune"); if not t then return nil end
     local r=t:FindFirstChild("LeftClickRemote"); if r then cachedKLC=r end; return r
 end
+
+-- T-Rex remote + RegisterHit/RegisterAttack
+local cachedTRexLC=nil; local cachedHitRE=nil; local cachedAtkRE=nil
+local sessionHash="1169b354"
+
+local function getTRexLC()
+    local char=lp.Character; if not char then return nil end
+    if cachedTRexLC and cachedTRexLC.Parent then return cachedTRexLC end
+    cachedTRexLC=nil
+    local t=char:FindFirstChild("T-Rex-T-Rex"); if not t then return nil end
+    local r=t:FindFirstChild("LeftClickRemote"); if r then cachedTRexLC=r end; return r
+end
+local function initTRexRE()
+    if not cachedHitRE then
+        pcall(function()
+            cachedHitRE=RS.Modules.Net:FindFirstChild("RE/RegisterHit")
+        end)
+    end
+    if not cachedAtkRE then
+        pcall(function()
+            cachedAtkRE=RS.Modules.Net:FindFirstChild("RE/RegisterAttack")
+        end)
+    end
+end
+
+-- sniff T-Rex session hash from real outgoing calls
+pcall(function()
+    local mt=getrawmetatable(game); if not mt then return end
+    local old=mt.__namecall; local hooked=false
+    setreadonly(mt,false)
+    mt.__namecall=newcclosure(function(self,...)
+        local ok,method=pcall(getnamecallmethod or function() return "" end)
+        method=ok and method or ""
+        if not hooked and method=="FireServer" then
+            pcall(function()
+                local net=RS:FindFirstChild("Modules") and RS.Modules:FindFirstChild("Net")
+                if net then
+                    local re=net:FindFirstChild("RE/RegisterHit")
+                    local a={...}
+                    if self==re and type(a[4])=="string" and #a[4]==8 then
+                        sessionHash=a[4]; hooked=true
+                        mt.__namecall=old
+                    end
+                end
+            end)
+        end
+        return old(self,...)
+    end)
+    setreadonly(mt,true)
+end)
+
 local function jit(b,a) return b+(math.random()*a*2-a)*0.001 end
+
+-- fire one burst hit via Kitsune M1
+local function fireKitsune(tgt,hrp)
+    local tc=tgt.model; if not tc then return false end
+    if not tgt.h or tgt.h.Health<=0 then return false end
+    local lc=getKLC(); if not lc then return false end
+    local dir=(tgt.root.Position-hrp.Position)
+    local du=dir.Magnitude>0 and dir.Unit or Vector3.new(0,0,1)
+    local vd=Vector3.new(du.X+(math.random()-0.5)*0.06,du.Y+(math.random()-0.5)*0.06,du.Z+(math.random()-0.5)*0.06).Unit
+    pcall(function() lc:FireServer(vd,1,true) end)
+    return true
+end
+
+-- fire one burst hit via T-Rex M1 (LeftClickRemote + RegisterHit + RegisterAttack)
+local function fireTRex(tgt,hrp)
+    local tc=tgt.model; if not tc then return false end
+    if not tgt.h or tgt.h.Health<=0 then return false end
+    local lc=getTRexLC(); if not lc then return false end
+    initTRexRE()
+    local dir=(tgt.root.Position-hrp.Position)*Vector3.new(1,0,1)
+    local du=dir.Magnitude>0 and dir.Unit or Vector3.new(0,0,1)
+    local yv=(math.random()-0.5)*0.10; local xv=(math.random()-0.5)*0.04
+    local humanDir=Vector3.new(du.X+xv,yv,du.Z).Unit
+    pcall(function() lc:FireServer(humanDir,1) end)
+    task.wait(jit(0.055,12))
+    local hb=tc:FindFirstChild("ModelHitbox")
+    local lb=tc:FindFirstChild("RightUpperLeg") or tc:FindFirstChild("HumanoidRootPart")
+    if cachedHitRE and hb then
+        pcall(function() cachedHitRE:FireServer(hb,{},nil,sessionHash) end)
+    end
+    task.wait(jit(0.018,8))
+    if cachedHitRE and lb then
+        pcall(function() cachedHitRE:FireServer(lb,{},nil,sessionHash) end)
+    end
+    task.wait(jit(0.018,8))
+    if cachedAtkRE then pcall(function() cachedAtkRE:FireServer(0.4) end) end
+    return true
+end
+
 local function fireAttack(tgt)
     local char=lp.Character; if not char then return end
     local hrp=char:FindFirstChild("HumanoidRootPart"); if not hrp then return end
@@ -714,14 +860,19 @@ local function fireAttack(tgt)
     local tgtKey=tostring(tc)
     if tpActive and not hitRegistry[tgtKey] then return end
     local hum=tgt.h; local maxB=30; local n=0
+    -- T-Rex fires slower (3 remotes), Kitsune fires faster
+    local waitTime = weaponMode==2 and 0.075 or 0.045
     while n<maxB do
         if not hum or not hum.Parent or hum.Health<=0 then break end
-        local lc=getKLC(); if not lc then break end
-        local dir=(tgt.root.Position-hrp.Position)
-        local du=dir.Magnitude>0 and dir.Unit or Vector3.new(0,0,1)
-        local vd=Vector3.new(du.X+(math.random()-0.5)*0.06,du.Y+(math.random()-0.5)*0.06,du.Z+(math.random()-0.5)*0.06).Unit
-        pcall(function() lc:FireServer(vd,1,true) end)
-        n=n+1; task.wait(jit(0.045,12))
+        local ok
+        if weaponMode==2 then
+            ok=fireTRex(tgt,hrp)
+        else
+            ok=fireKitsune(tgt,hrp)
+        end
+        if not ok then break end
+        n=n+1
+        task.wait(jit(waitTime,15))
     end
     hitRegistry[tgtKey]=true
 end
@@ -797,4 +948,54 @@ RunService.Heartbeat:Connect(function()
         end
     end
     if count~=lastCount then pScroll.CanvasSize=UDim2.new(0,0,0,count*26+6); lastCount=count end
+
+    -- AUTO COLLECT: walk into any collectable (coins/fruit) nearby
+    if autoCollect and root and frame%15==0 then
+        pcall(function()
+            local desc2=workspace:GetDescendants()
+            for _,v in ipairs(desc2) do
+                if v:IsA("BasePart") and (v.Name=="Collectible" or v.Name=="Coin" or v.Name=="Chest"
+                    or v.Name=="Drop" or v.Name=="SeaFruit" or v.Parent and v.Parent.Name=="Drops") then
+                    local d=(root.Position-v.Position).Magnitude
+                    if d<120 then
+                        local hrp2=lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+                        if hrp2 then hrp2.CFrame=CFrame.new(v.Position+Vector3.new(0,2,0)) end
+                        break
+                    end
+                end
+            end
+        end)
+    end
+
+    -- PROXIMITY ALERT: flash ESP label red when a player comes within 60 studs
+    if proximityAlert and root then
+        for player,_ in pairs(pLabels) do
+            if player~=lp then
+                local c2=player.Character; local r2=c2 and c2:FindFirstChild("HumanoidRootPart")
+                if r2 then
+                    local d=(root.Position-r2.Position).Magnitude
+                    if d<60 then
+                        local now2=tick()
+                        if not lastAlertTime[player] or now2-lastAlertTime[player]>5 then
+                            lastAlertTime[player]=now2
+                            -- flash the ESP border red
+                            local lb2=espLabels[player.Name]
+                            if lb2 then
+                                local stroke2=lb2.f:FindFirstChildOfClass("UIStroke")
+                                if stroke2 then
+                                    local origCol=stroke2.Color
+                                    for _=1,4 do
+                                        stroke2.Color=Color3.fromRGB(255,30,30)
+                                        task.wait(0.12)
+                                        stroke2.Color=origCol
+                                        task.wait(0.12)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
 end)
