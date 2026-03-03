@@ -1,7 +1,16 @@
--- ═══════════════════════════════════════════
---   FyZe Hub | Blox Fruits  v1
---   Delta-safe (Android/iOS mobile executor)
--- ═══════════════════════════════════════════
+-- ═══════════════════════════════════════════════════════
+--   FyZe Hub | Blox Fruits  v9
+--   Upload this file to GitHub, then run in Delta:
+--
+--   loadstring(game:HttpGet("YOUR_RAW_URL",true))()
+--
+--   Raw URL format:
+--   https://raw.githubusercontent.com/fmakessongs-cmd/aim/main/aim.lua
+-- ═══════════════════════════════════════════════════════
+
+-- ── self-contained: no separate loader needed ──────────
+-- This file IS the script. Just loadstring the raw URL.
+-- Anti-duplicate: destroy any old GUI instances on re-run
 
 -- ── services ────────────────────────────────
 local Players    = game:GetService("Players")
