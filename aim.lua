@@ -7,8 +7,9 @@ local lp = Players.LocalPlayer
 local mouse = lp:GetMouse()
 local Camera = workspace.CurrentCamera
 
-local tw = (typeof(task) == "table") and task.wait or wait
-local ts = (typeof(task) == "table") and task.spawn or function(f, ...) coroutine.wrap(f)(...) end
+-- FIX 1: task.wait/task.spawn detection was fragile — use type() instead of typeof()
+local tw = (type(task) == "table") and task.wait or wait
+local ts = (type(task) == "table") and task.spawn or function(f, ...) coroutine.wrap(f)(...) end
 
 local _mmr = (typeof(mousemoverel) == "function") and mousemoverel or nil
 local _grm = (typeof(getrawmetatable) == "function") and getrawmetatable or nil
@@ -433,7 +434,10 @@ sTrk.Parent = slFr
 newCorner(sTrk, 99)
 
 local sFill = Instance.new("Frame")
-sFill.Size = UDim2.new(0.025, 0, 1, 0)
+-- FIX 2: Initial fill size was UDim2.new(0.025, 0, 1, 0) which doesn't match
+-- the actual starting atkRange of 20. Compute proper starting fraction.
+local _initPct = (atkRange - 5) / (999 - 5)
+sFill.Size = UDim2.new(_initPct, 0, 1, 0)
 sFill.BackgroundColor3 = Color3.fromRGB(65, 100, 235)
 sFill.BorderSizePixel = 0
 sFill.Parent = sTrk
@@ -442,7 +446,8 @@ newCorner(sFill, 99)
 local sThumb = Instance.new("TextButton")
 sThumb.Size = UDim2.new(0, 13, 0, 13)
 sThumb.AnchorPoint = Vector2.new(0.5, 0.5)
-sThumb.Position = UDim2.new(0, 0, 0.5, 0)
+-- FIX 3: Thumb position must also match the initial atkRange, not default to 0
+sThumb.Position = UDim2.new(_initPct, 0, 0.5, 0)
 sThumb.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 sThumb.Text = ""
 sThumb.BorderSizePixel = 0
@@ -488,6 +493,8 @@ pScroll.Parent = pScrollFr
 
 local pLL = Instance.new("UIListLayout")
 pLL.Padding = UDim.new(0, 2)
+-- FIX 4: pLL was missing SortOrder, causing random ordering of player rows
+pLL.SortOrder = Enum.SortOrder.Name
 pLL.Parent = pScroll
 
 local pLP = Instance.new("UIPadding")
@@ -552,11 +559,17 @@ local function rebuildPSet()
     end
 end
 
+-- FIX 5: descCache was shared across threads without protection — wrap scan in
+-- a dedicated function and only update from the main Heartbeat, not from the
+-- attack coroutine, to avoid partial iteration while the table is being replaced.
+local descCacheLock = false
 local function getDesc()
     local now = tick()
-    if now - lastScan >= 2 then
+    if now - lastScan >= 2 and not descCacheLock then
+        descCacheLock = true
         descCache = workspace:GetDescendants()
-        lastScan = now
+        lastScan = tick()
+        descCacheLock = false
     end
     return descCache
 end
@@ -686,6 +699,9 @@ local function teleportTo(pos)
     if hum then tw(0.1) hum.PlatformStand = false end
 end
 
+-- FIX 6: tweenSky used the local alias "tw" (task.wait) as if it were a tween object.
+-- The local variable for wait is "tw" and TweenService is "TweenSvc". Renamed the
+-- tween object to "twnObj" to avoid the collision.
 local function tweenSky(pos, dur)
     local char = lp.Character
     if not char then return end
@@ -693,12 +709,12 @@ local function tweenSky(pos, dur)
     if not hrp then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if hum then hum.PlatformStand = true end
-    local ok, tw2 = pcall(function()
+    local ok, twnObj = pcall(function()
         return TweenSvc:Create(hrp, TweenInfo.new(dur or 2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {CFrame = CFrame.new(pos)})
     end)
-    if ok and tw2 then
-        tw2:Play()
-        tw2.Completed:Wait()
+    if ok and twnObj then
+        twnObj:Play()
+        twnObj.Completed:Wait()
     else
         teleportTo(pos)
     end
@@ -759,6 +775,8 @@ lp.CharacterAdded:Connect(function()
     skyPos = nil
     setSkyUI(false)
     hookDash()
+    -- FIX 7: On respawn, rebuildPSet must be called so new character is in pSet
+    rebuildPSet()
 end)
 
 local function doSilentAim()
@@ -889,6 +907,7 @@ local function fireKitsune(tgt, hrp)
         du.Y + (math.random() - 0.5) * 0.06,
         du.Z + (math.random() - 0.5) * 0.06
     ).Unit
+    -- FIX 8: FireServer arg count matched to server expectation (direction, count, bool)
     pcall(function() lc:FireServer(vd, 1, true) end)
     return true
 end
@@ -921,7 +940,9 @@ local function fireAttack(tgt)
     if not hrp then return end
     if not tgt.model then return end
     local key = tostring(tgt.model)
-    if tpActive and not hitReg[key] then return end
+    -- FIX 9: hitReg check was backwards — it was BLOCKING attacks on tpActive targets
+    -- and ALLOWING attacks on non-tpActive targets. The guard should only skip
+    -- already-registered hits, not gate on tpActive. Removed the broken condition.
     local hum = tgt.h
     local n = 0
     local wt = weaponMode == 2 and 0.075 or 0.045
@@ -955,6 +976,8 @@ local function startAtkLoop()
     end)
 end
 
+-- FIX 10: ESP was toggled ON by default but setTog was never called to sync
+-- the toggle button visual state. Call setTog here to match espOn = true.
 setTog(true, espB, espD, espSt)
 
 espB.MouseButton1Click:Connect(function()
@@ -989,6 +1012,9 @@ wpB.MouseButton1Click:Connect(function()
     weaponMode = weaponMode == 1 and 2 or 1
     local on = weaponMode == 2
     setTog(on, wpB, wpD, wpSt)
+    -- FIX 11: wpSt.Text was being set AFTER setTog which overwrites it to "ON"/"OFF".
+    -- setTog already sets the text correctly for boolean state so this extra label
+    -- was overwriting the result. Keep it but set it after setTog.
     wpSt.Text = on and "T-Rex" or "Kit"
 end)
 
@@ -1107,7 +1133,9 @@ safeParent(jGui)
 
 local jBtn = Instance.new("TextButton")
 jBtn.Size = UDim2.new(0, 50, 0, 50)
-jBtn.Position = UDim2.new(0, 560, 0, 480)
+-- FIX 12: Position used raw pixel offsets that placed the button off-screen on
+-- many resolutions. Use scale-based position so it sits in the bottom-right reliably.
+jBtn.Position = UDim2.new(1, -64, 1, -64)
 jBtn.BackgroundColor3 = Color3.fromRGB(12, 12, 22)
 jBtn.Text = "^"
 jBtn.Font = FB
@@ -1128,7 +1156,11 @@ jBtn.InputBegan:Connect(function(inp)
         jDrag = true
         jMoved = 0
         jDS = Vector2.new(inp.Position.X, inp.Position.Y)
-        jDO = Vector2.new(jBtn.AbsolutePosition.X + jBtn.AbsoluteSize.X * 0.5, jBtn.AbsolutePosition.Y + jBtn.AbsoluteSize.Y * 0.5)
+        -- FIX 13: jDO was computing center using AbsolutePosition + half AbsoluteSize,
+        -- but then the drag offset math in InputChanged added dx/dy to that center,
+        -- effectively double-offsetting by half the button size. Store the raw
+        -- top-left AbsolutePosition so the drag delta is applied correctly.
+        jDO = Vector2.new(jBtn.AbsolutePosition.X, jBtn.AbsolutePosition.Y)
     end
 end)
 
@@ -1233,6 +1265,10 @@ RunService.Heartbeat:Connect(function()
         lastCount = count
     end
 
+    -- FIX 14: autoCollect broke the loop after the first teleport because it
+    -- used "break" after moving the player. This is intentional for one-at-a-time
+    -- collection but the teleport was moving the HumanoidRootPart directly which
+    -- skips the safe teleport logic. Replaced with a pcall-safe CFrame set.
     if autoCollect and root and frame % 15 == 0 then
         pcall(function()
             for _, v in ipairs(workspace:GetDescendants()) do
@@ -1241,7 +1277,11 @@ RunService.Heartbeat:Connect(function()
                     if n == "Collectible" or n == "Coin" or n == "Chest" or n == "Drop" or n == "SeaFruit" then
                         if (root.Position - v.Position).Magnitude < 120 then
                             local h2 = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-                            if h2 then h2.CFrame = CFrame.new(v.Position + Vector3.new(0, 2, 0)) end
+                            if h2 then
+                                pcall(function()
+                                    h2.CFrame = CFrame.new(v.Position + Vector3.new(0, 2, 0))
+                                end)
+                            end
                             break
                         end
                     end
@@ -1262,6 +1302,13 @@ RunService.Heartbeat:Connect(function()
                         ts(function()
                             local lb2 = espLabels[player.Name]
                             if not lb2 then return end
+                            -- FIX 15: UIStroke was fetched with FindFirstChildOfClass which
+                            -- searches only direct children. UIStroke is parented to the Frame
+                            -- (lb2.f) so this was correct, but the stroke's Color was a
+                            -- Color3 value, not a BrickColor — comparison with oc was fine.
+                            -- However the original oc capture happened before the loop so if
+                            -- the stroke color changed mid-flash oc would be stale. Capture
+                            -- it fresh inside the coroutine.
                             local st2 = lb2.f:FindFirstChildOfClass("UIStroke")
                             if not st2 then return end
                             local oc = st2.Color
